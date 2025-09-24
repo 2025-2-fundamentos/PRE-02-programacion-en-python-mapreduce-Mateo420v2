@@ -2,111 +2,111 @@
 
 # pylint: disable=broad-exception-raised
 
+import fileinput
 import glob
-import os
+import os.path
 import string
 import time
+from itertools import groupby
+
+def copy_raw_files_to_input_folder(n):
+    """Funcion copy_files"""
 
 
-def initialize_directory(directory):
-    if os.path.exists(directory):
-        for file in glob.glob(f"{directory}/*"):
+    if os.path.exists("files/input"):
+        for file in glob.glob("files/input/*"):
             os.remove(file)
-    else:
-        os.makedirs(directory)
+        os.rmdir("files/input")
+    os.makedirs("files/input")
 
-
-def copy_and_number_raw_files_to_input_folder(raw_dir, input_dir, n=5000):
-    for file in glob.glob(f"{raw_dir}/*"):
-        with open(file, "r", encoding="utf-8") as f:
-            text = f.read()
-
+    for file in glob.glob("files/raw/*"):
         for i in range(1, n + 1):
-            raw_filename_with_extension = os.path.basename(file)
-            raw_filename_without_extension = os.path.splitext(
-                raw_filename_with_extension
-            )[0]
-            new_filename = f"{raw_filename_without_extension}_{i}.txt"
-            with open(f"{input_dir}/{new_filename}", "w", encoding="utf-8") as f2:
-                f2.write(text)
+            with open(file, "r", encoding="utf-8") as f:
+                with open(
+                    f"files/input/{os.path.basename(file).split('.')[0]}_{i}.txt",
+                    "w",
+                    encoding="utf-8",
+                ) as f2:
+                    f2.write(f.read()) 
 
+def load_input(input_directory):
+    """Funcion load_input"""
 
-def wordcount_mapper(sequence):
-    pairs_sequence = []
-    for _, line in sequence:
-        line = line.lower()
-        line = line.translate(str.maketrans("", "", string.punctuation))
-        line = line.replace("\n", "")
-        words = line.split()
-        pairs_sequence.extend((word, 1) for word in words)
+    sequence = []
+    files = glob.glob(f"{input_directory}/*")
+    with fileinput.input(files=files) as f:
+        for line in f:
+            sequence.append((fileinput.filename(), line))
+    return sequence
 
-    return pairs_sequence
+def line_preprocessing(sequence):
+    """Line Preprocessing"""
+    sequence = [
+        (key, value.translate(str.maketrans("", "", string.punctuation)).lower())
+        for key, value in sequence
+    ]
+    return sequence
+  
 
+def mapper(sequence):
+    """Mapper"""
+    return [(word, 1) for _, value in sequence for word in value.split()]
 
-def wordcount_reducer(pairs_sequence):
+def shuffle_and_sort(sequence):
+    """Shuffle and Sort"""
+    return sorted(sequence, key=lambda x: x[0])
+
+def reducer(sequence):
+    """Reducer"""
     result = []
-    for key, value in pairs_sequence:
-        if result and result[-1][0] == key:
-            result[-1] = (key, result[-1][1] + value)
-        else:
-            result.append((key, value))
+    for key, group in groupby(sequence, lambda x: x[0]):
+        result.append((key, sum(value for _, value in group)))
     return result
 
 
-initialize_directory("files/input")
-copy_and_number_raw_files_to_input_folder("files/raw", "files/input", 100)
+def create_ouptput_directory(output_directory):
+    """Create Output Directory"""
 
-start_time = time.time()
-
-
-def mapreduce(
-    mapper,
-    reducer,
-    input_dir,
-    output_dir,
-):
-    def read_lines_from_files(input_dir):
-        sequence = []
-        files = glob.glob(f"{input_dir}/*")
-        for file in files:
-            with open(file, "r", encoding="utf-8") as f:
-                for line in f:
-                    sequence.append((file, line))
-        return sequence
-
-    def apply_shuffle_and_sort(pairs_sequence):
-        pairs_sequence = sorted(pairs_sequence)
-        return pairs_sequence
-
-    def write_results_to_file(result, output_dir):
-        with open(f"{output_dir}/part-00000", "w", encoding="utf-8") as f:
-            for key, value in result:
-                f.write(f"{key}\t{value}\n")
-
-    def create_success_file(output_dir):
-        with open(f"{output_dir}/_SUCCESS", "w", encoding="utf-8") as f:
-            f.write("")
-
-    def create_output_dir_or_fail(output_dir):
-        if os.path.exists(output_dir):
-            raise Exception(f"Output directory '{output_dir}' already exists.")
-        else:
-            os.makedirs(output_dir)
-
-    sequence = read_lines_from_files(input_dir)
-    pairs_sequence = mapper(sequence)
-    pairs_sequence = apply_shuffle_and_sort(pairs_sequence)
-    result = reducer(pairs_sequence)
-    create_output_dir_or_fail(output_dir)
-    write_results_to_file(result, output_dir)
-    create_success_file(output_dir)
+    if os.path.exists(output_directory):
+        for file in glob.glob(f"{output_directory}/*"):
+            os.remove(file)
+        os.rmdir(output_directory)
+    os.makedirs(output_directory)
 
 
-mapreduce(
-    wordcount_mapper,
-    wordcount_reducer,
-    "files/input",
-    "files/output",
-)
+def save_output(output_directory, sequence):
+    """Save Output"""
+    with open(f"{output_directory}/part-00000", "w", encoding="utf-8") as f:
+        for key, value in sequence:
+            f.write(f"{key}\t{value}\n")
 
-end_time = time.time()
+def create_marker(output_directory):
+    """Create Marker"""
+    with open(f"{output_directory}/_SUCCESS", "w", encoding="utf-8") as f:
+        f.write("")
+
+def run_job(input_directory, output_directory):
+    """Job"""
+    sequence = load_input(input_directory)
+    sequence = line_preprocessing(sequence)
+    sequence = mapper(sequence)
+    sequence = shuffle_and_sort(sequence)
+    sequence = reducer(sequence)
+    create_ouptput_directory(output_directory)
+    save_output(output_directory, sequence)
+    create_marker(output_directory)
+    return
+
+if __name__ == "__main__":
+
+    copy_raw_files_to_input_folder(n=1000)
+
+    start_time = time.time()
+
+    run_job(
+        "files/input",
+        "files/output",
+    )
+
+    end_time = time.time()
+    print(f"Tiempo de ejecución: {end_time - start_time:.2f} segundos")
